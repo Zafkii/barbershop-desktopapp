@@ -1,0 +1,15 @@
+# Build artifacts
+/bin/
+/tmp/
+
+# Fyne packaging output
+*.app
+*.exe
+*.apk
+*.tar.gz
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
