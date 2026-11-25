@@ -31,8 +31,8 @@ type Toast struct {
 
 // ToastManager maneja la visualización de toasts
 type ToastManager struct {
-	window      fyne.Window
-	toastStack  *fyne.Container
+	window       fyne.Window
+	toastStack   *fyne.Container
 	currentToast *Toast
 }
 
@@ -48,7 +48,6 @@ func NewToastManager(w fyne.Window) *ToastManager {
 
 // Show muestra un toast con animación de barra de progreso
 func (tm *ToastManager) Show(message string, toastType ToastType, duration time.Duration) {
-	// Descartar toast actual si existe
 	if tm.currentToast != nil {
 		tm.dismissCurrent()
 	}
@@ -56,13 +55,11 @@ func (tm *ToastManager) Show(message string, toastType ToastType, duration time.
 	toast := tm.createToast(message, toastType, duration)
 	tm.currentToast = toast
 	
-	// Mostrar
 	tm.toastStack.RemoveAll()
 	tm.toastStack.Add(toast.container)
 	tm.toastStack.Show()
 	tm.toastStack.Refresh()
 	
-	// Animar barra de progreso
 	go toast.animateProgress(func() {
 		fyne.Do(func() {
 			tm.dismissCurrent()
@@ -71,19 +68,15 @@ func (tm *ToastManager) Show(message string, toastType ToastType, duration time.
 }
 
 func (tm *ToastManager) createToast(message string, toastType ToastType, duration time.Duration) *Toast {
-	var bgColor, barColor fyne.ThemeColorName
+	var barColor fyne.ThemeColorName
 	switch toastType {
 	case ToastSuccess:
-		bgColor = theme.ColorNameSuccess
 		barColor = theme.ColorNameSuccess
 	case ToastWarning:
-		bgColor = theme.ColorNameWarning
 		barColor = theme.ColorNameWarning
 	case ToastError:
-		bgColor = theme.ColorNameError
 		barColor = theme.ColorNameError
 	default:
-		bgColor = theme.ColorNamePrimary
 		barColor = theme.ColorNamePrimary
 	}
 	
@@ -91,19 +84,36 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 	label.TextStyle = fyne.TextStyle{Bold: true}
 	label.Wrapping = fyne.TextWrapWord
 	
-	bgRect := canvas.NewRectangle(theme.Color(bgColor))
-	bgRect.SetMinSize(fyne.NewSize(400, 50))
-	
 	progress := canvas.NewRectangle(theme.Color(barColor))
 	progress.SetMinSize(fyne.NewSize(400, 3))
 	
-	content := container.NewBorder(nil, progress, nil, nil, container.NewPadded(label))
-	toastContainer := container.NewStack(bgRect, content)
+	innerContent := container.NewBorder(nil, progress, nil, nil, container.NewPadded(label))
+	
+	// Fondo con esquinas redondeadas (radio 8px)
+	bgRect := canvas.NewRectangle(theme.Color(theme.ColorNameBackground))
+	bgRect.SetMinSize(fyne.NewSize(400, 50))
+	
+	// Stack: fondo + contenido
+	toastCore := container.NewStack(bgRect, innerContent)
+	
+	// BORDE 1px con color separator - usando contenedor con padding mínimo
+	// Para 1px usamos padding de 1px en NewPadded, pero NewPadded usa theme.Padding() que es más grande
+	// Así que creamos nuestro propio contenedor con padding manual
+	borderContainer := container.NewStack(
+		// Fondo del borde (separator color)
+		canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
+		// Contenido centrado con 1px de margen
+		container.NewCenter(container.NewPadded(toastCore)),
+	)
+	
+	// El padding del NewPadded interno crea el espacio para el borde
+	// Pero para control exacto de 1px, usamos un contenedor personalizado
+	borderContainer.Resize(fyne.NewSize(402, 52)) // 400+2, 50+2 = 1px cada lado
 	
 	outer := container.NewVBox(
 		container.NewHBox(
 			widget.NewLabel(""),
-			container.NewPadded(toastContainer),
+			borderContainer,
 			widget.NewLabel(""),
 		),
 	)
@@ -144,7 +154,6 @@ func (tm *ToastManager) dismissCurrent() {
 	tm.toastStack.Refresh()
 }
 
-// Overlay devuelve el contenedor para superponer en la UI principal
 func (tm *ToastManager) Overlay() *fyne.Container {
 	return tm.toastStack
 }
