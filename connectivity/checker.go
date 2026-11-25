@@ -1,6 +1,7 @@
 package connectivity
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -43,7 +44,7 @@ type Checker struct {
 
 func NewChecker(serverURL string, interval time.Duration) *Checker {
 	if interval == 0 {
-		interval = 5 * time.Second
+		interval = 3 * time.Second
 	}
 	return &Checker{
 		serverURL: serverURL,
@@ -91,21 +92,20 @@ func (c *Checker) OnStatusChange(cb func(Status)) {
 
 func (c *Checker) check() {
 	status := c.determineStatus()
+	fmt.Printf("[connectivity] status: %v\n", status)
 	
 	c.mu.Lock()
-	changed := status != c.status
 	c.status = status
 	c.mu.Unlock()
 	
-	if changed {
-		c.cbMu.Lock()
-		cbs := make([]func(Status), len(c.callbacks))
-		copy(cbs, c.callbacks)
-		c.cbMu.Unlock()
-		
-		for _, cb := range cbs {
-			cb(status)
-		}
+	// Always call callbacks to ensure UI updates
+	c.cbMu.Lock()
+	cbs := make([]func(Status), len(c.callbacks))
+	copy(cbs, c.callbacks)
+	c.cbMu.Unlock()
+	
+	for _, cb := range cbs {
+		cb(status)
 	}
 }
 
@@ -120,15 +120,35 @@ func (c *Checker) determineStatus() Status {
 }
 
 func hasInternet() bool {
-	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 3*time.Second)
-	if err != nil {
-		conn, err = net.DialTimeout("tcp", "1.1.1.1:53", 3*time.Second)
-		if err != nil {
-			return false
+	// Intentar múltiples endpoints HTTP para confirmar conectividad
+	endpoints := []string{
+		"http://www.google.com/generate_204",
+		"http://www.cloudflare.com/cdn-cgi/trace",
+		"http://detectportal.firefox.com/success.txt",
+	}
+	
+	client := &http.Client{Timeout: 3 * time.Second}
+	
+	for _, url := range endpoints {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == 204 || resp.StatusCode == 200 {
+				return true
+			}
 		}
 	}
-	conn.Close()
-	return true
+	
+	// Fallback: TCP a DNS
+	for _, addr := range []string{"8.8.8.8:53", "1.1.1.1:53"} {
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+	}
+	
+	return false
 }
 
 func serverReachable(serverURL string) bool {

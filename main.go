@@ -23,6 +23,10 @@ const (
 var (
 	//go:embed assets/icoda.png
 	iconBytes []byte
+	//go:embed assets/lucid-icons/wifi.svg
+	wifiSVG []byte
+	//go:embed assets/lucid-icons/wifi-off.svg
+	wifiOffSVG []byte
 )
 
 func main() {
@@ -35,7 +39,7 @@ func main() {
 	themeManager := theme.NewThemeManager(a, w)
 	toastManager := toast.NewToastManager(w)
 	apiClient := api.NewClient(serverURL)
-	connChecker := connectivity.NewChecker(serverURL, 5*time.Second)
+	connChecker := connectivity.NewChecker(serverURL, 3*time.Second)
 
 	// Callback de login
 	var onLogin func(username, password string)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -59,6 +60,7 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 	// Indicador de conectividad en el header del login
 	connIndicator := NewConnectivityIndicator()
 	connChecker.OnStatusChange(func(s connectivity.Status) {
+		fmt.Printf("[ui] status: %v\n", s)
 		fyne.Do(func() {
 			connIndicator.UpdateStatus(s)
 		})
@@ -119,6 +121,7 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 
 	// Iniciar checker y actualizar indicador
 	connChecker.OnStatusChange(func(s connectivity.Status) {
+		fmt.Printf("[ui] status: %v\n", s)
 		fyne.Do(func() {
 			connIndicator.UpdateStatus(s)
 		})

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 
 	"fyne.io/fyne/v2"
@@ -27,8 +28,9 @@ func NewConnectivityIndicator() *ConnectivityIndicator {
 
 func (ci *ConnectivityIndicator) CreateRenderer() fyne.WidgetRenderer {
 	circle := canvas.NewCircle(colorForStatus(ci.status))
-	circle.StrokeWidth = 0
-	
+	circle.StrokeWidth = 2
+	circle.StrokeColor = color.RGBA{R: 80, G: 80, B: 80, A: 255}
+
 	r := &connectivityRenderer{
 		circle: circle,
 		ind:    ci,
@@ -58,12 +60,14 @@ func (r *connectivityRenderer) Layout(size fyne.Size) {
 }
 
 func (r *connectivityRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(20, 20)
+	return fyne.NewSize(18, 18)
 }
 
 func (r *connectivityRenderer) Refresh() {
+	fmt.Printf("[renderer] Refresh, status=%v\n", r.ind.status)
 	r.circle.FillColor = colorForStatus(r.ind.status)
 	r.circle.Refresh()
+	fmt.Printf("[renderer] Refresh done, color=%v\n", r.circle.FillColor)
 }
 
 func (r *connectivityRenderer) Objects() []fyne.CanvasObject {
@@ -72,8 +76,13 @@ func (r *connectivityRenderer) Objects() []fyne.CanvasObject {
 
 func (r *connectivityRenderer) Destroy() {}
 
-// UpdateStatus actualiza el estado y refresca el widget
 func (ci *ConnectivityIndicator) UpdateStatus(s connectivity.Status) {
+	fmt.Printf("[indicator] UpdateStatus, s=%v, current=%v\n", s, ci.status)
 	ci.status = s
 	ci.Refresh()
+	fmt.Printf("[indicator] UpdateStatus done\n")
+}
+
+func (ci *ConnectivityIndicator) Status() connectivity.Status {
+	return ci.status
 }
