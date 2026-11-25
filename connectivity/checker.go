@@ -1,7 +1,6 @@
 package connectivity
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -92,7 +91,6 @@ func (c *Checker) OnStatusChange(cb func(Status)) {
 
 func (c *Checker) check() {
 	status := c.determineStatus()
-	fmt.Printf("[connectivity] status: %v\n", status)
 	
 	c.mu.Lock()
 	c.status = status

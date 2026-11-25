@@ -43,6 +43,7 @@ func main() {
 
 	// Callback de login
 	var onLogin func(username, password string)
+	var startSessionRefresh func()
 	onLogin = func(username, password string) {
 		resp, err := apiClient.Login(username, password)
 		if err != nil {
@@ -61,11 +62,37 @@ func main() {
 		// Éxito - cambiar a UI principal
 		fyne.Do(func() {
 			mainUI := ui.MakeMainUI(w, resp.Username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, func() {
+				// Logout
+				apiClient.Logout()
 				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 			})
 			w.SetContent(mainUI)
 			toastManager.Show("¡Bienvenido, "+resp.Username+"!", toast.ToastSuccess, 4*time.Second)
 		})
+
+		// Iniciar refresh periódico de sesión
+		startSessionRefresh()
+	}
+
+	// Refresh periódico de sesión (cada 1 hora) para mantener la sesión viva
+	// más allá de los 7 días mientras la app esté abierta
+	startSessionRefresh = func() {
+		go func() {
+			ticker := time.NewTicker(1 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				valid, err := apiClient.VerifySession()
+				if err != nil || !valid {
+					// Sesión expirada o inválida - volver a login
+					fyne.Do(func() {
+						apiClient.Logout()
+						w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+						toastManager.Show("Sesión expirada. Por favor inicia sesión nuevamente.", toast.ToastWarning, 5*time.Second)
+					})
+					return
+				}
+			}
+		}()
 	}
 
 	// Pantalla inicial: login
@@ -74,4 +101,5 @@ func main() {
 
 	// Limpiar al salir
 	connChecker.Stop()
+	apiClient.Logout()
 }
