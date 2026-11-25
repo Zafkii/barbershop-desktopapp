@@ -10,12 +10,14 @@ import (
 
 	appTheme "barbershop-desktop/theme"
 	"barbershop-desktop/toast"
+
+	"barbershop-desktop/connectivity"
 )
 
 const appTitle = "Barber Shop"
 
 // MakeLoginUI crea la pantalla de login
-func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, onLogin func(username, password string)) fyne.CanvasObject {
+func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, onLogin func(username, password string)) fyne.CanvasObject {
 	usernameEntry := widget.NewEntry()
 	usernameEntry.SetPlaceHolder("Usuario")
 
@@ -54,6 +56,24 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 	header := widget.NewLabelWithStyle(appTitle, fyne.TextAlignCenter, fyne.TextStyle{Bold: true, Monospace: true})
 	subHeader := widget.NewLabelWithStyle("Panel de administración", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
 
+	// Indicador de conectividad en el header del login
+	connIndicator := NewConnectivityIndicator()
+	connChecker.OnStatusChange(func(s connectivity.Status) {
+		fyne.Do(func() {
+			connIndicator.UpdateStatus(s)
+		})
+	})
+	connChecker.Start()
+	// Forzar actualización inicial
+	connIndicator.UpdateStatus(connChecker.Status())
+
+	headerRight := container.NewHBox(connIndicator, 
+		widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() {
+			tm.Toggle()
+		}),
+	)
+	headerBar := container.NewBorder(header, nil, nil, headerRight, nil)
+
 	form := container.NewVBox(
 		widget.NewLabel(""),
 		usernameEntry,
@@ -65,15 +85,18 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 
 	centered := container.NewCenter(form)
 	return container.NewBorder(
-		container.NewVBox(header, subHeader, widget.NewSeparator()),
+		container.NewVBox(headerBar, subHeader, widget.NewSeparator()),
 		nil, nil, nil,
 		container.NewPadded(centered),
 	)
 }
 
 // MakeMainUI crea la pantalla principal
-func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, onLogout func()) fyne.CanvasObject {
+func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, onLogout func()) fyne.CanvasObject {
 	titleLabel := widget.NewLabelWithStyle(appTitle, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	// Indicador de conectividad (WiFi icon en esquina superior derecha)
+	connIndicator := NewConnectivityIndicator()
 
 	// Botón toggle tema
 	var themeBtn *widget.Button
@@ -87,12 +110,21 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 	logoutBtn := widget.NewButtonWithIcon("Cerrar sesión", theme.LogoutIcon(), onLogout)
 	logoutBtn.Importance = widget.LowImportance
 
-	headerRight := container.NewHBox(themeBtn, logoutBtn)
+	headerRight := container.NewHBox(connIndicator, themeBtn, logoutBtn)
 	header := container.NewBorder(
 		titleLabel,
 		nil, nil, headerRight,
 		container.NewPadded(widget.NewLabel("")),
 	)
+
+	// Iniciar checker y actualizar indicador
+	connChecker.OnStatusChange(func(s connectivity.Status) {
+		fyne.Do(func() {
+			connIndicator.UpdateStatus(s)
+		})
+	})
+	connChecker.Start()
+	connIndicator.UpdateStatus(connChecker.Status())
 
 	content := container.NewVBox(
 		widget.NewLabel(""),

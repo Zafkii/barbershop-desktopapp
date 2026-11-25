@@ -9,6 +9,7 @@ import (
 	_ "embed"
 
 	"barbershop-desktop/api"
+	"barbershop-desktop/connectivity"
 	"barbershop-desktop/theme"
 	"barbershop-desktop/toast"
 	"barbershop-desktop/ui"
@@ -34,14 +35,13 @@ func main() {
 	themeManager := theme.NewThemeManager(a, w)
 	toastManager := toast.NewToastManager(w)
 	apiClient := api.NewClient(serverURL)
+	connChecker := connectivity.NewChecker(serverURL, 5*time.Second)
 
 	// Callback de login
 	var onLogin func(username, password string)
 	onLogin = func(username, password string) {
 		resp, err := apiClient.Login(username, password)
 		if err != nil {
-			// Mostrar error en la UI de login - necesitamos acceso al statusLabel
-			// Por simplicidad, mostramos toast de error
 			fyne.Do(func() {
 				toastManager.Show("Error de conexión: "+err.Error(), toast.ToastError, 5*time.Second)
 			})
@@ -56,14 +56,18 @@ func main() {
 
 		// Éxito - cambiar a UI principal
 		fyne.Do(func() {
-			w.SetContent(ui.MakeMainUI(w, resp.Username, themeManager, toastManager, func() {
-				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, onLogin))
-			}))
+			mainUI := ui.MakeMainUI(w, resp.Username, themeManager, toastManager, connChecker, func() {
+				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, onLogin))
+			})
+			w.SetContent(mainUI)
 			toastManager.Show("¡Bienvenido, "+resp.Username+"!", toast.ToastSuccess, 4*time.Second)
 		})
 	}
 
 	// Pantalla inicial: login
-	w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, onLogin))
+	w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, onLogin))
 	w.ShowAndRun()
+
+	// Limpiar al salir
+	connChecker.Stop()
 }
