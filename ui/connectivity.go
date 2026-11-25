@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -11,76 +11,94 @@ import (
 	"barbershop-desktop/connectivity"
 )
 
-// ConnectivityIndicator muestra el estado de conexión con un círculo coloreado
+// ConnectivityIndicator muestra el estado de conexión con un icono SVG
 type ConnectivityIndicator struct {
 	widget.BaseWidget
-	status connectivity.Status
-	circle *canvas.Circle
+	status   connectivity.Status
+	wifiSVG  []byte
+	wifiOffSVG []byte
 }
 
-func NewConnectivityIndicator() *ConnectivityIndicator {
+func NewConnectivityIndicator(wifiSVG, wifiOffSVG []byte) *ConnectivityIndicator {
 	ci := &ConnectivityIndicator{
-		status: connectivity.StatusOffline,
+		status:     connectivity.StatusOffline,
+		wifiSVG:    wifiSVG,
+		wifiOffSVG: wifiOffSVG,
 	}
 	ci.ExtendBaseWidget(ci)
 	return ci
 }
 
 func (ci *ConnectivityIndicator) CreateRenderer() fyne.WidgetRenderer {
-	circle := canvas.NewCircle(colorForStatus(ci.status))
-	circle.StrokeWidth = 2
-	circle.StrokeColor = color.RGBA{R: 80, G: 80, B: 80, A: 255}
-
+	img := ci.createImage()
 	r := &connectivityRenderer{
-		circle: circle,
-		ind:    ci,
+		img: img,
+		ind: ci,
 	}
 	return r
 }
 
-func colorForStatus(s connectivity.Status) color.Color {
-	switch s {
+func (ci *ConnectivityIndicator) createImage() *canvas.Image {
+	var svgData []byte
+	var color string
+	var name string
+
+	switch ci.status {
 	case connectivity.StatusOnline:
-		return color.RGBA{R: 0, G: 200, B: 0, A: 255} // Verde
+		svgData = ci.wifiSVG
+		color = "#00C800" // Verde
+		name = "wifi-green.svg"
 	case connectivity.StatusServerDown:
-		return color.RGBA{R: 255, G: 200, B: 0, A: 255} // Amarillo
+		svgData = ci.wifiSVG
+		color = "#FFC800" // Amarillo
+		name = "wifi-yellow.svg"
 	default:
-		return color.RGBA{R: 200, G: 0, B: 0, A: 255} // Rojo
+		svgData = ci.wifiOffSVG
+		color = "#C80000" // Rojo
+		name = "wifi-red.svg"
 	}
+
+	// Reemplazar el color del stroke en el SVG
+	coloredSVG := strings.ReplaceAll(string(svgData), `stroke="#000000"`, fmt.Sprintf(`stroke="%s"`, color))
+
+	// Usar un nombre único por color para evitar cache de Fyne
+	img := canvas.NewImageFromResource(fyne.NewStaticResource(name, []byte(coloredSVG)))
+	img.SetMinSize(fyne.NewSize(24, 24))
+	img.FillMode = canvas.ImageFillContain
+	return img
 }
 
 type connectivityRenderer struct {
-	circle *canvas.Circle
-	ind    *ConnectivityIndicator
+	img *canvas.Image
+	ind *ConnectivityIndicator
 }
 
 func (r *connectivityRenderer) Layout(size fyne.Size) {
-	r.circle.Resize(size)
-	r.circle.Move(fyne.NewPos(0, 0))
+	r.img.Resize(size)
+	r.img.Move(fyne.NewPos(0, 0))
 }
 
 func (r *connectivityRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(18, 18)
+	return fyne.NewSize(24, 24)
 }
 
 func (r *connectivityRenderer) Refresh() {
-	fmt.Printf("[renderer] Refresh, status=%v\n", r.ind.status)
-	r.circle.FillColor = colorForStatus(r.ind.status)
-	r.circle.Refresh()
-	fmt.Printf("[renderer] Refresh done, color=%v\n", r.circle.FillColor)
+	// Recrear la imagen con el color apropiado
+	// Usar un nombre único para evitar el cache de SVG de Fyne
+	newImg := r.ind.createImage()
+	r.img.Resource = newImg.Resource
+	r.img.Refresh()
 }
 
 func (r *connectivityRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.circle}
+	return []fyne.CanvasObject{r.img}
 }
 
 func (r *connectivityRenderer) Destroy() {}
 
 func (ci *ConnectivityIndicator) UpdateStatus(s connectivity.Status) {
-	fmt.Printf("[indicator] UpdateStatus, s=%v, current=%v\n", s, ci.status)
 	ci.status = s
 	ci.Refresh()
-	fmt.Printf("[indicator] UpdateStatus done\n")
 }
 
 func (ci *ConnectivityIndicator) Status() connectivity.Status {

@@ -60,8 +60,8 @@ func main() {
 
 		// Éxito - cambiar a UI principal
 		fyne.Do(func() {
-			mainUI := ui.MakeMainUI(w, resp.Username, themeManager, toastManager, connChecker, func() {
-				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, onLogin))
+			mainUI := ui.MakeMainUI(w, resp.Username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, func() {
+				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 			})
 			w.SetContent(mainUI)
 			toastManager.Show("¡Bienvenido, "+resp.Username+"!", toast.ToastSuccess, 4*time.Second)
@@ -69,7 +69,7 @@ func main() {
 	}
 
 	// Pantalla inicial: login
-	w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, onLogin))
+	w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 	w.ShowAndRun()
 
 	// Limpiar al salir
