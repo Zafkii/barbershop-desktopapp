@@ -1,6 +1,8 @@
 package toast
 
 import (
+	"image"
+	"image/color"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -89,31 +91,23 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 	
 	innerContent := container.NewBorder(nil, progress, nil, nil, container.NewPadded(label))
 	
-	// Fondo con esquinas redondeadas (radio 8px)
-	bgRect := canvas.NewRectangle(theme.Color(theme.ColorNameBackground))
+	// Usar RoundedRect para fondo con esquinas redondeadas (radio 8px)
+	bgRect := NewRoundedRect(theme.Color(theme.ColorNameBackground), 8)
 	bgRect.SetMinSize(fyne.NewSize(400, 50))
 	
-	// Stack: fondo + contenido
+	// Stack: fondo redondeado + contenido
 	toastCore := container.NewStack(bgRect, innerContent)
 	
-	// BORDE 1px con color separator - usando contenedor con padding mínimo
-	// Para 1px usamos padding de 1px en NewPadded, pero NewPadded usa theme.Padding() que es más grande
-	// Así que creamos nuestro propio contenedor con padding manual
-	borderContainer := container.NewStack(
-		// Fondo del borde (separator color)
-		canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
-		// Contenido centrado con 1px de margen
-		container.NewCenter(container.NewPadded(toastCore)),
-	)
+	// BORDE 1px redondeado: otro RoundedRect ligeramente más grande detrás
+	borderRect := NewRoundedRect(theme.Color(theme.ColorNameSeparator), 9) // radio 9 = 8+1 para que se vea el borde
+	borderRect.SetMinSize(fyne.NewSize(402, 52)) // 1px cada lado
 	
-	// El padding del NewPadded interno crea el espacio para el borde
-	// Pero para control exacto de 1px, usamos un contenedor personalizado
-	borderContainer.Resize(fyne.NewSize(402, 52)) // 400+2, 50+2 = 1px cada lado
+	borderedToast := container.NewStack(borderRect, toastCore)
 	
 	outer := container.NewVBox(
 		container.NewHBox(
 			widget.NewLabel(""),
-			borderContainer,
+			borderedToast,
 			widget.NewLabel(""),
 		),
 	)
@@ -126,6 +120,114 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 		container: outer,
 	}
 }
+
+// RoundedRect es un widget que dibuja un rectángulo con esquinas redondeadas usando canvas.Raster
+type RoundedRect struct {
+	widget.BaseWidget
+	fillColor  color.Color
+	radius     float32
+	minSize    fyne.Size
+}
+
+func NewRoundedRect(c color.Color, radius float32) *RoundedRect {
+	r := &RoundedRect{
+		fillColor: c,
+		radius:    radius,
+	}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *RoundedRect) SetMinSize(size fyne.Size) {
+	r.minSize = size
+}
+
+func (r *RoundedRect) MinSize() fyne.Size {
+	if r.minSize != fyne.NewSize(0, 0) {
+		return r.minSize
+	}
+	return fyne.NewSize(2*r.radius, 2*r.radius)
+}
+
+func (r *RoundedRect) CreateRenderer() fyne.WidgetRenderer {
+	raster := canvas.NewRaster(r.renderRoundedRect)
+	raster.SetMinSize(r.MinSize())
+	return &roundedRectRenderer{raster: raster, rect: r}
+}
+
+func (r *RoundedRect) renderRoundedRect(w, h int) image.Image {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	radius := float32(r.radius)
+	
+	// Convertir color a RGBA
+	rgba := color.RGBAModel.Convert(r.fillColor).(color.RGBA)
+	
+	radiusInt := int(radius)
+	
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			// Calcular distancia a la esquina más cercana
+			dx := float32(0)
+			dy := float32(0)
+			
+			// Esquina superior izquierda
+			if x < radiusInt && y < radiusInt {
+				dx = float32(radiusInt - x)
+				dy = float32(radiusInt - y)
+			}
+			// Esquina superior derecha
+			if x >= w-radiusInt && y < radiusInt {
+				dx = float32(x - (w - radiusInt))
+				dy = float32(radiusInt - y)
+			}
+			// Esquina inferior izquierda
+			if x < radiusInt && y >= h-radiusInt {
+				dx = float32(radiusInt - x)
+				dy = float32(y - (h - radiusInt))
+			}
+			// Esquina inferior derecha
+			if x >= w-radiusInt && y >= h-radiusInt {
+				dx = float32(x - (w - radiusInt))
+				dy = float32(y - (h - radiusInt))
+			}
+			
+			// Si está en zona de esquinas, verificar distancia
+			if dx > 0 || dy > 0 {
+				dist := dx*dx + dy*dy
+				if dist > radius*radius {
+					continue // fuera del radio, pixel transparente
+				}
+			}
+			
+			img.SetRGBA(x, y, rgba)
+		}
+	}
+	
+	return img
+}
+
+type roundedRectRenderer struct {
+	raster *canvas.Raster
+	rect   *RoundedRect
+}
+
+func (r *roundedRectRenderer) Layout(size fyne.Size) {
+	r.raster.Resize(size)
+}
+
+func (r *roundedRectRenderer) MinSize() fyne.Size {
+	return r.rect.MinSize()
+}
+
+func (r *roundedRectRenderer) Refresh() {
+	r.raster.Refresh()
+}
+
+func (r *roundedRectRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.raster}
+}
+
+func (r *roundedRectRenderer) Destroy() {}
 
 func (t *Toast) animateProgress(onComplete func()) {
 	steps := 60
