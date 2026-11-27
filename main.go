@@ -18,6 +18,9 @@ import (
 const (
 	appTitle  = "Barber Shop"
 	serverURL = "http://localhost:8080"
+
+	prefToken   = "session_token"
+	prefUser    = "session_username"
 )
 
 var (
@@ -40,10 +43,28 @@ func main() {
 	toastManager := toast.NewToastManager(w)
 	apiClient := api.NewClient(serverURL)
 	connChecker := connectivity.NewChecker(serverURL, 3*time.Second)
+	prefs := a.Preferences()
 
 	// Callback de login
 	var onLogin func(username, password string)
 	var startSessionRefresh func()
+
+	// Mostrar la UI principal con el usuario dado
+	showMainUI := func(username string) {
+		fyne.Do(func() {
+			mainUI := ui.MakeMainUI(w, username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, func() {
+				// Logout: limpiar token en memoria y en disco
+				apiClient.Logout()
+				prefs.SetString(prefToken, "")
+				prefs.SetString(prefUser, "")
+				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+			})
+			w.SetContent(mainUI)
+			toastManager.Show("¡Bienvenido, "+username+"!", toast.ToastSuccess, 4*time.Second)
+		})
+		startSessionRefresh()
+	}
+
 	onLogin = func(username, password string) {
 		resp, err := apiClient.Login(username, password)
 		if err != nil {
@@ -59,19 +80,11 @@ func main() {
 			return
 		}
 
-		// Éxito - cambiar a UI principal
-		fyne.Do(func() {
-			mainUI := ui.MakeMainUI(w, resp.Username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, func() {
-				// Logout
-				apiClient.Logout()
-				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
-			})
-			w.SetContent(mainUI)
-			toastManager.Show("¡Bienvenido, "+resp.Username+"!", toast.ToastSuccess, 4*time.Second)
-		})
+		// Persistir token y usuario en disco (Fyne preferences)
+		prefs.SetString(prefToken, resp.Token)
+		prefs.SetString(prefUser, resp.Username)
 
-		// Iniciar refresh periódico de sesión
-		startSessionRefresh()
+		showMainUI(resp.Username)
 	}
 
 	// Refresh periódico de sesión (cada 1 hora) para mantener la sesión viva
@@ -86,6 +99,8 @@ func main() {
 					// Sesión expirada o inválida - volver a login
 					fyne.Do(func() {
 						apiClient.Logout()
+						prefs.SetString(prefToken, "")
+						prefs.SetString(prefUser, "")
 						w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 						toastManager.Show("Sesión expirada. Por favor inicia sesión nuevamente.", toast.ToastWarning, 5*time.Second)
 					})
@@ -95,11 +110,35 @@ func main() {
 		}()
 	}
 
-	// Pantalla inicial: login
-	w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+	// Al arrancar: si hay token guardado, validar contra el server.
+	// Si es válido (dentro de los 7 días), entrar directo sin pedir login.
+	token := prefs.String(prefToken)
+	username := prefs.String(prefUser)
+	if token != "" {
+		apiClient.SetToken(token)
+		go func() {
+			valid, err := apiClient.VerifySession()
+			if err == nil && valid {
+				showMainUI(username)
+			} else {
+				// Token expirado o inválido - limpiar y mostrar login
+				prefs.SetString(prefToken, "")
+				prefs.SetString(prefUser, "")
+				apiClient.Logout()
+				fyne.Do(func() {
+					w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+				})
+			}
+		}()
+		// Mostrar login mientras se verifica en segundo plano
+		w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+	} else {
+		w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+	}
+
 	w.ShowAndRun()
 
-	// Limpiar al salir
+	// Limpiar al salir. NO cerramos sesión: el token persiste en disco
+	// para no pedir login al reabrir dentro de los 7 días.
 	connChecker.Stop()
-	apiClient.Logout()
 }
