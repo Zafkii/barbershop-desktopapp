@@ -24,11 +24,12 @@ const (
 
 // Toast representa una notificación individual
 type Toast struct {
-	message   string
-	toastType ToastType
-	duration  time.Duration
-	progress  *canvas.Rectangle
-	container *fyne.Container
+	message      string
+	toastType    ToastType
+	duration     time.Duration
+	progress     *canvas.Rectangle
+	container    *fyne.Container
+	barMaxWidth  float32
 }
 
 // ToastManager maneja la visualización de toasts
@@ -88,10 +89,24 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 
 	barTint := theme.Color(barColor)
 
-	progress := canvas.NewRectangle(barTint)
-	progress.SetMinSize(fyne.NewSize(400, 3))
+	// Ancho útil de la barra: ancho del toast (400) menos 8px de margen a cada lado
+	// para que no sobresalga en las esquinas redondeadas.
+	const toastWidth = 400
+	const cornerInset = 8
+	barMaxWidth := float32(toastWidth - 2*cornerInset)
 
-	innerContent := container.NewBorder(nil, progress, nil, nil, container.NewPadded(label))
+	progress := canvas.NewRectangle(barTint)
+	progress.SetMinSize(fyne.NewSize(barMaxWidth, 3))
+
+	// Insets transparentes a los lados para mantener la barra dentro del área redondeada
+	leftInset := canvas.NewRectangle(color.Transparent)
+	leftInset.SetMinSize(fyne.NewSize(cornerInset, 3))
+	rightInset := canvas.NewRectangle(color.Transparent)
+	rightInset.SetMinSize(fyne.NewSize(cornerInset, 3))
+
+	bottomBar := container.NewHBox(leftInset, progress, rightInset)
+
+	innerContent := container.NewBorder(nil, bottomBar, nil, nil, container.NewPadded(label))
 
 	// Un solo RoundedRect que dibuja fondo + borde en el mismo raster.
 	// Evita el problema de capas donde el fondo tapa el borde.
@@ -112,11 +127,12 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 	)
 	
 	return &Toast{
-		message:   message,
-		toastType: toastType,
-		duration:  duration,
-		progress:  progress,
-		container: outer,
+		message:     message,
+		toastType:   toastType,
+		duration:    duration,
+		progress:    progress,
+		container:   outer,
+		barMaxWidth: barMaxWidth,
 	}
 }
 
@@ -275,10 +291,10 @@ func (t *Toast) animateProgress(onComplete func()) {
 		time.Sleep(stepDuration)
 		
 		progressRatio := float32(i) / float32(steps)
-		
+
 		fyne.Do(func() {
 			if t.progress != nil {
-				newWidth := progressRatio * 400
+				newWidth := progressRatio * t.barMaxWidth
 				t.progress.Resize(fyne.NewSize(newWidth, 3))
 				t.progress.Refresh()
 			}
