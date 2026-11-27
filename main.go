@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	fynetheme "fyne.io/fyne/v2/theme"
 
 	_ "embed"
 
@@ -58,24 +59,50 @@ func main() {
 	connChecker := connectivity.NewChecker(serverURL, 3*time.Second)
 	prefs := a.Preferences()
 
-	// Background a nivel de ventana: se renderiza UNA sola vez y persiste
-	// detrás de login y de la UI principal (evita el parpadeo/espera al entrar).
-	bgColored := ui.ColorizeBackground(bgSVG, paletteManager.Wave1(), paletteManager.Wave2())
-	bgImg := canvas.NewImageFromResource(fyne.NewStaticResource(ui.BackgroundResourceName(paletteManager.Wave1(), paletteManager.Wave2()), bgColored))
-	bgImg.FillMode = canvas.ImageFillCover
+	// Background lazy: la ventana se muestra de inmediato con un placeholder
+	// (color de fondo) y el SVG pesado se renderiza en segundo plano.
+	bgLayer := container.NewStack(canvas.NewRectangle(fynetheme.Color(fynetheme.ColorNameBackground)))
+	contentLayer := container.NewStack()
+	root := container.NewStack(bgLayer, contentLayer)
+	w.SetContent(root)
 
-	// Reconstruye el background con la paleta actual (nombre único por color => hot reload).
+	// setContent cambia la pantalla actual (login / main) sin tocar el fondo.
+	setContent := func(content fyne.CanvasObject) {
+		contentLayer.RemoveAll()
+		contentLayer.Add(content)
+	}
+
+	// Carga/actualiza el background rasterizando el SVG FUERA del hilo principal.
+	// El hilo principal solo dibuja el bitmap resultante (rápido).
+	var bgImg *canvas.Image
 	refreshBg := func() {
 		w1, w2 := paletteManager.Wave1(), paletteManager.Wave2()
 		colored := ui.ColorizeBackground(bgSVG, w1, w2)
-		bgImg.Resource = fyne.NewStaticResource(ui.BackgroundResourceName(w1, w2), colored)
-		bgImg.Refresh()
+		go func() {
+			size := w.Canvas().Size()
+			img := rasterizeBackground(colored, int(size.Width), int(size.Height))
+			if img == nil {
+				return
+			}
+			fyne.Do(func() {
+				if bgImg == nil {
+					bgImg = canvas.NewImageFromImage(img)
+					bgImg.FillMode = canvas.ImageFillCover
+					bgLayer.RemoveAll()
+					bgLayer.Add(bgImg)
+				} else {
+					bgImg.Image = img
+					bgImg.Refresh()
+				}
+			})
+		}()
 	}
 
-	// setRoot coloca el contenido sobre el background persistente.
-	setRoot := func(content fyne.CanvasObject) {
-		w.SetContent(container.NewStack(bgImg, content))
-	}
+	// Dispara la carga del background en segundo plano tras mostrar la ventana.
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		refreshBg()
+	}()
 
 	// Callback de login
 	var onLogin func(username, password string)
@@ -89,9 +116,9 @@ func main() {
 				apiClient.Logout()
 				prefs.SetString(prefToken, "")
 				prefs.SetString(prefUser, "")
-				setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+				setContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 			})
-			setRoot(mainUI)
+			setContent(mainUI)
 			toastManager.Show("¡Bienvenido, "+username+"!", toast.ToastSuccess, 4*time.Second)
 		})
 		startSessionRefresh()
@@ -133,7 +160,7 @@ func main() {
 						apiClient.Logout()
 						prefs.SetString(prefToken, "")
 						prefs.SetString(prefUser, "")
-						setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+						setContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 						toastManager.Show("Sesión expirada. Por favor inicia sesión nuevamente.", toast.ToastWarning, 5*time.Second)
 					})
 					return
@@ -158,14 +185,14 @@ func main() {
 				prefs.SetString(prefUser, "")
 				apiClient.Logout()
 				fyne.Do(func() {
-					setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+					setContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 				})
 			}
 		}()
 		// Mostrar login mientras se verifica en segundo plano
-		setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+		setContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 	} else {
-		setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+		setContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 	}
 
 	w.ShowAndRun()
