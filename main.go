@@ -30,6 +30,12 @@ var (
 	wifiSVG []byte
 	//go:embed assets/lucid-icons/wifi-off.svg
 	wifiOffSVG []byte
+	//go:embed assets/lucid-icons/moon.svg
+	moonSVG []byte
+	//go:embed assets/lucid-icons/sun.svg
+	sunSVG []byte
+	//go:embed assets/lucid-icons/paintbrush-vertical.svg
+	customSVG []byte
 )
 
 func main() {
@@ -39,7 +45,7 @@ func main() {
 	w.Resize(fyne.NewSize(960, 640))
 
 	// Inicializar managers
-	themeManager := theme.NewThemeManager(a, w)
+	themeManager := theme.NewThemeManager(a, w, moonSVG, sunSVG, customSVG)
 	toastManager := toast.NewToastManager(w)
 	apiClient := api.NewClient(serverURL)
 	connChecker := connectivity.NewChecker(serverURL, 3*time.Second)

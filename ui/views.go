@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -16,6 +15,18 @@ import (
 )
 
 const appTitle = "Barber Shop"
+
+// makeThemeButton crea un botón de tema con icono dinámico (moon/sun/custom).
+// Al tocarlo alterna solo entre dark y light; nunca entra a custom.
+func makeThemeButton(tm *appTheme.ThemeManager) *widget.Button {
+	var btn *widget.Button
+	btn = widget.NewButtonWithIcon("", tm.IconResource(), func() {
+		tm.Toggle()
+		btn.SetIcon(tm.IconResource())
+	})
+	btn.Importance = widget.LowImportance
+	return btn
+}
 
 // MakeLoginUI crea la pantalla de login
 func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG []byte, onLogin func(username, password string)) fyne.CanvasObject {
@@ -60,7 +71,6 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 	// Indicador de conectividad en el header del login
 	connIndicator := NewConnectivityIndicator(wifiSVG, wifiOffSVG)
 	connChecker.OnStatusChange(func(s connectivity.Status) {
-		fmt.Printf("[ui] status: %v\n", s)
 		fyne.Do(func() {
 			connIndicator.UpdateStatus(s)
 		})
@@ -69,11 +79,7 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 	// Forzar actualización inicial
 	connIndicator.UpdateStatus(connChecker.Status())
 
-	headerRight := container.NewHBox(connIndicator, 
-		widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() {
-			tm.Toggle()
-		}),
-	)
+	headerRight := container.NewHBox(connIndicator, makeThemeButton(tm))
 	headerBar := container.NewBorder(header, nil, nil, headerRight, nil)
 
 	form := container.NewVBox(
@@ -100,14 +106,8 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 	// Indicador de conectividad (WiFi icon en esquina superior derecha)
 	connIndicator := NewConnectivityIndicator(wifiSVG, wifiOffSVG)
 
-	// Botón toggle tema
-	var themeBtn *widget.Button
-	themeBtn = widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() {
-		tm.Toggle()
-		themeBtn.SetText(tm.ThemeButtonText())
-	})
-	themeBtn.SetText(tm.ThemeButtonText())
-	themeBtn.Importance = widget.LowImportance
+	// Botón toggle tema (icono dinámico)
+	themeBtn := makeThemeButton(tm)
 
 	logoutBtn := widget.NewButtonWithIcon("Cerrar sesión", theme.LogoutIcon(), onLogout)
 	logoutBtn.Importance = widget.LowImportance
@@ -121,7 +121,6 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 
 	// Iniciar checker y actualizar indicador
 	connChecker.OnStatusChange(func(s connectivity.Status) {
-		fmt.Printf("[ui] status: %v\n", s)
 		fyne.Do(func() {
 			connIndicator.UpdateStatus(s)
 		})
