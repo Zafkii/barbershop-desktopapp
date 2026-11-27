@@ -5,6 +5,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 
 	_ "embed"
 
@@ -56,6 +58,25 @@ func main() {
 	connChecker := connectivity.NewChecker(serverURL, 3*time.Second)
 	prefs := a.Preferences()
 
+	// Background a nivel de ventana: se renderiza UNA sola vez y persiste
+	// detrás de login y de la UI principal (evita el parpadeo/espera al entrar).
+	bgColored := ui.ColorizeBackground(bgSVG, paletteManager.Wave1(), paletteManager.Wave2())
+	bgImg := canvas.NewImageFromResource(fyne.NewStaticResource(ui.BackgroundResourceName(paletteManager.Wave1(), paletteManager.Wave2()), bgColored))
+	bgImg.FillMode = canvas.ImageFillCover
+
+	// Reconstruye el background con la paleta actual (nombre único por color => hot reload).
+	refreshBg := func() {
+		w1, w2 := paletteManager.Wave1(), paletteManager.Wave2()
+		colored := ui.ColorizeBackground(bgSVG, w1, w2)
+		bgImg.Resource = fyne.NewStaticResource(ui.BackgroundResourceName(w1, w2), colored)
+		bgImg.Refresh()
+	}
+
+	// setRoot coloca el contenido sobre el background persistente.
+	setRoot := func(content fyne.CanvasObject) {
+		w.SetContent(container.NewStack(bgImg, content))
+	}
+
 	// Callback de login
 	var onLogin func(username, password string)
 	var startSessionRefresh func()
@@ -63,14 +84,14 @@ func main() {
 	// Mostrar la UI principal con el usuario dado
 	showMainUI := func(username string) {
 		fyne.Do(func() {
-			mainUI := ui.MakeMainUI(w, username, themeManager, paletteManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, bgSVG, func() {
+			mainUI := ui.MakeMainUI(w, username, themeManager, paletteManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, refreshBg, func() {
 				// Logout: limpiar token en memoria y en disco
 				apiClient.Logout()
 				prefs.SetString(prefToken, "")
 				prefs.SetString(prefUser, "")
-				w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+				setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 			})
-			w.SetContent(mainUI)
+			setRoot(mainUI)
 			toastManager.Show("¡Bienvenido, "+username+"!", toast.ToastSuccess, 4*time.Second)
 		})
 		startSessionRefresh()
@@ -112,7 +133,7 @@ func main() {
 						apiClient.Logout()
 						prefs.SetString(prefToken, "")
 						prefs.SetString(prefUser, "")
-						w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+						setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 						toastManager.Show("Sesión expirada. Por favor inicia sesión nuevamente.", toast.ToastWarning, 5*time.Second)
 					})
 					return
@@ -137,14 +158,14 @@ func main() {
 				prefs.SetString(prefUser, "")
 				apiClient.Logout()
 				fyne.Do(func() {
-					w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+					setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 				})
 			}
 		}()
 		// Mostrar login mientras se verifica en segundo plano
-		w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+		setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 	} else {
-		w.SetContent(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
+		setRoot(ui.MakeLoginUI(w, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, onLogin))
 	}
 
 	w.ShowAndRun()

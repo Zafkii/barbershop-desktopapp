@@ -100,12 +100,9 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 	)
 }
 
-// MakeMainUI crea la pantalla principal con 3 paneles:
-// - Panel izquierdo: nombre del app + módulos + utilidades abajo
-// - Panel superior: título del módulo + búsqueda + usuario con dropdown
-// - Contenido: área del módulo seleccionado (vacío por ahora)
-// bgSVG es el SVG del background con placeholders __WAVE_LINE_1__ y __WAVE_LINE_2__.
-func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *appTheme.PaletteManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG, bgSVG []byte, onLogout func()) fyne.CanvasObject {
+// MakeMainUI crea la pantalla principal con 3 paneles (sin background; el bg se pinta a nivel de ventana).
+// refreshBg reconstruye el background de la ventana con la paleta actual.
+func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *appTheme.PaletteManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG []byte, refreshBg func(), onLogout func()) fyne.CanvasObject {
 
 	// ---- Indicador de conectividad ----
 	connIndicator := NewConnectivityIndicator(wifiSVG, wifiOffSVG)
@@ -134,18 +131,6 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *a
 
 	// Título del módulo en el panel superior (se actualiza al seleccionar)
 	moduleTitle := widget.NewLabelWithStyle("Barberos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-
-	// Background SVG colorizado con la paleta actual (hex)
-	bgColored := colorizeBackground(bgSVG, pm.Wave1(), pm.Wave2())
-	bgImg := canvas.NewImageFromResource(fyne.NewStaticResource("bg.svg", bgColored))
-	bgImg.FillMode = canvas.ImageFillCover
-
-	// Reconstruye el background con los colores actuales de la paleta
-	refreshBg := func() {
-		colored := colorizeBackground(bgSVG, pm.Wave1(), pm.Wave2())
-		bgImg.Resource = fyne.NewStaticResource("bg.svg", colored)
-		bgImg.Refresh()
-	}
 
 	// Contenido del módulo (vacío por ahora; Ajustes muestra el selector de paleta)
 	moduleContent := container.NewStack()
@@ -219,7 +204,6 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *a
 	appLayout := container.NewBorder(nil, nil, leftPanel, nil, rightSide)
 
 	mainContent := container.NewStack(
-		bgImg,
 		appLayout,
 		toastMgr.Overlay(),
 	)
@@ -227,12 +211,18 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *a
 	return mainContent
 }
 
-// colorizeBackground reemplaza los placeholders del SVG de background con los colores dados.
-func colorizeBackground(svg []byte, wave1, wave2 string) []byte {
+// ColorizeBackground reemplaza los placeholders del SVG de background con los colores dados (hex).
+func ColorizeBackground(svg []byte, wave1, wave2 string) []byte {
 	s := string(svg)
 	s = strings.ReplaceAll(s, "__WAVE_LINE_1__", wave1)
 	s = strings.ReplaceAll(s, "__WAVE_LINE_2__", wave2)
 	return []byte(s)
+}
+
+// BackgroundResourceName devuelve un nombre único por combinación de colores,
+// para evitar el cache de texturas SVG de Fyne (que se indexa por nombre).
+func BackgroundResourceName(wave1, wave2 string) string {
+	return "bg-" + strings.TrimPrefix(wave1, "#") + "-" + strings.TrimPrefix(wave2, "#") + ".svg"
 }
 
 // makeSettingsContent construye el contenido del módulo Ajustes:
