@@ -85,29 +85,28 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 	label := widget.NewLabel(message)
 	label.TextStyle = fyne.TextStyle{Bold: true}
 	label.Wrapping = fyne.TextWrapWord
-	
-	progress := canvas.NewRectangle(theme.Color(barColor))
+
+	barTint := theme.Color(barColor)
+
+	progress := canvas.NewRectangle(barTint)
 	progress.SetMinSize(fyne.NewSize(400, 3))
-	
+
 	innerContent := container.NewBorder(nil, progress, nil, nil, container.NewPadded(label))
-	
-	// Usar RoundedRect para fondo con esquinas redondeadas (radio 8px)
-	bgRect := NewRoundedRect(theme.Color(theme.ColorNameBackground), 8)
+
+	// Un solo RoundedRect que dibuja fondo + borde en el mismo raster.
+	// Evita el problema de capas donde el fondo tapa el borde.
+	bgRect := NewRoundedRectBordered(
+		theme.Color(theme.ColorNameBackground),
+		barTint,
+		8,        // radio
+		1,        // grosor del borde
+	)
 	bgRect.SetMinSize(fyne.NewSize(400, 50))
-	
-	// Stack: fondo redondeado + contenido
-	toastCore := container.NewStack(bgRect, innerContent)
-	
-	// BORDE 1px redondeado: otro RoundedRect ligeramente más grande detrás
-	borderRect := NewRoundedRect(theme.Color(theme.ColorNameSeparator), 9) // radio 9 = 8+1 para que se vea el borde
-	borderRect.SetMinSize(fyne.NewSize(402, 52)) // 1px cada lado
-	
-	borderedToast := container.NewStack(borderRect, toastCore)
-	
+
 	outer := container.NewVBox(
 		container.NewHBox(
 			widget.NewLabel(""),
-			borderedToast,
+			container.NewStack(bgRect, innerContent),
 			widget.NewLabel(""),
 		),
 	)
@@ -121,18 +120,33 @@ func (tm *ToastManager) createToast(message string, toastType ToastType, duratio
 	}
 }
 
-// RoundedRect es un widget que dibuja un rectángulo con esquinas redondeadas usando canvas.Raster
+// RoundedRect es un widget que dibuja un rectángulo con esquinas redondeadas usando canvas.Raster.
+// Puede dibujar un borde del mismo radio (borderWidth > 0) en el mismo raster.
 type RoundedRect struct {
 	widget.BaseWidget
-	fillColor  color.Color
-	radius     float32
-	minSize    fyne.Size
+	fillColor   color.Color
+	borderColor color.Color
+	radius      float32
+	borderWidth float32
+	minSize     fyne.Size
 }
 
 func NewRoundedRect(c color.Color, radius float32) *RoundedRect {
 	r := &RoundedRect{
 		fillColor: c,
 		radius:    radius,
+	}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+// NewRoundedRectBordered crea un RoundedRect con borde dibujado en el raster.
+func NewRoundedRectBordered(fill, border color.Color, radius, borderWidth float32) *RoundedRect {
+	r := &RoundedRect{
+		fillColor:   fill,
+		borderColor: border,
+		radius:      radius,
+		borderWidth: borderWidth,
 	}
 	r.ExtendBaseWidget(r)
 	return r
@@ -157,53 +171,77 @@ func (r *RoundedRect) CreateRenderer() fyne.WidgetRenderer {
 
 func (r *RoundedRect) renderRoundedRect(w, h int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	radius := float32(r.radius)
-	
-	// Convertir color a RGBA
-	rgba := color.RGBAModel.Convert(r.fillColor).(color.RGBA)
-	
-	radiusInt := int(radius)
-	
+	radius := r.radius
+	borderWidth := r.borderWidth
+
+	fillRGBA := color.RGBAModel.Convert(r.fillColor).(color.RGBA)
+	var borderRGBA color.RGBA
+	if r.borderColor != nil {
+		borderRGBA = color.RGBAModel.Convert(r.borderColor).(color.RGBA)
+	}
+
+	// Rectángulo interior (dentro del borde), inset por borderWidth
+	inset := int(borderWidth)
+	innerRadius := radius - borderWidth
+	if innerRadius < 0 {
+		innerRadius = 0
+	}
+
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			// Calcular distancia a la esquina más cercana
-			dx := float32(0)
-			dy := float32(0)
-			
-			// Esquina superior izquierda
-			if x < radiusInt && y < radiusInt {
-				dx = float32(radiusInt - x)
-				dy = float32(radiusInt - y)
+			// ¿Está el pixel dentro del rectángulo exterior redondeado?
+			if !pointInRoundedRect(x, y, w, h, radius) {
+				continue // transparente
 			}
-			// Esquina superior derecha
-			if x >= w-radiusInt && y < radiusInt {
-				dx = float32(x - (w - radiusInt))
-				dy = float32(radiusInt - y)
+
+			// Si hay borde, verificar si el pixel está en la zona del borde
+			if borderWidth > 0 && !pointInRoundedRect(x-inset, y-inset, w-2*inset, h-2*inset, innerRadius) {
+				img.SetRGBA(x, y, borderRGBA)
+				continue
 			}
-			// Esquina inferior izquierda
-			if x < radiusInt && y >= h-radiusInt {
-				dx = float32(radiusInt - x)
-				dy = float32(y - (h - radiusInt))
-			}
-			// Esquina inferior derecha
-			if x >= w-radiusInt && y >= h-radiusInt {
-				dx = float32(x - (w - radiusInt))
-				dy = float32(y - (h - radiusInt))
-			}
-			
-			// Si está en zona de esquinas, verificar distancia
-			if dx > 0 || dy > 0 {
-				dist := dx*dx + dy*dy
-				if dist > radius*radius {
-					continue // fuera del radio, pixel transparente
-				}
-			}
-			
-			img.SetRGBA(x, y, rgba)
+
+			img.SetRGBA(x, y, fillRGBA)
 		}
 	}
-	
+
 	return img
+}
+
+// pointInRoundedRect reporta si (x,y) está dentro de un rectángulo redondeado
+// de tamaño w×h con esquinas de radio r, en coordenadas locales (0,0 = esquina sup-izq).
+func pointInRoundedRect(x, y, w, h int, r float32) bool {
+	if x < 0 || y < 0 || x >= w || y >= h {
+		return false
+	}
+	radiusInt := int(r)
+	dx := float32(0)
+	dy := float32(0)
+
+	// Esquina superior izquierda
+	if x < radiusInt && y < radiusInt {
+		dx = float32(radiusInt - x)
+		dy = float32(radiusInt - y)
+	} else if x >= w-radiusInt && y < radiusInt {
+		// Esquina superior derecha
+		dx = float32(x - (w - radiusInt))
+		dy = float32(radiusInt - y)
+	} else if x < radiusInt && y >= h-radiusInt {
+		// Esquina inferior izquierda
+		dx = float32(radiusInt - x)
+		dy = float32(y - (h - radiusInt))
+	} else if x >= w-radiusInt && y >= h-radiusInt {
+		// Esquina inferior derecha
+		dx = float32(x - (w - radiusInt))
+		dy = float32(y - (h - radiusInt))
+	}
+
+	if dx > 0 || dy > 0 {
+		dist := dx*dx + dy*dy
+		if dist > r*r {
+			return false
+		}
+	}
+	return true
 }
 
 type roundedRectRenderer struct {
