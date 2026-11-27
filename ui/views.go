@@ -1,9 +1,10 @@
 package ui
 
 import (
-	"time"
+	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -99,27 +100,14 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 	)
 }
 
-// MakeMainUI crea la pantalla principal
-func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG []byte, onLogout func()) fyne.CanvasObject {
-	titleLabel := widget.NewLabelWithStyle(appTitle, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+// MakeMainUI crea la pantalla principal con 3 paneles:
+// - Panel izquierdo: nombre del app + módulos + utilidades abajo
+// - Panel superior: título del módulo + búsqueda + usuario con dropdown
+// - Contenido: área del módulo seleccionado (vacío por ahora)
+func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG []byte, onLogout func()) fyne.CanvasObject {
 
-	// Indicador de conectividad (WiFi icon en esquina superior derecha)
+	// ---- Indicador de conectividad ----
 	connIndicator := NewConnectivityIndicator(wifiSVG, wifiOffSVG)
-
-	// Botón toggle tema (icono dinámico)
-	themeBtn := makeThemeButton(tm)
-
-	logoutBtn := widget.NewButtonWithIcon("Cerrar sesión", theme.LogoutIcon(), onLogout)
-	logoutBtn.Importance = widget.LowImportance
-
-	headerRight := container.NewHBox(connIndicator, themeBtn, logoutBtn)
-	header := container.NewBorder(
-		titleLabel,
-		nil, nil, headerRight,
-		container.NewPadded(widget.NewLabel("")),
-	)
-
-	// Iniciar checker y actualizar indicador
 	connChecker.OnStatusChange(func(s connectivity.Status) {
 		fyne.Do(func() {
 			connIndicator.UpdateStatus(s)
@@ -128,30 +116,99 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 	connChecker.Start()
 	connIndicator.UpdateStatus(connChecker.Status())
 
-	content := container.NewVBox(
-		widget.NewLabel(""),
-		widget.NewLabelWithStyle("Panel de Administración", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewSeparator(),
-		widget.NewLabel(""),
-		widget.NewLabel("Módulos disponibles:"),
-		widget.NewButton("Gestionar Barberos", func() { 
-			toastMgr.Show("Módulo Barberos - Próximamente", toast.ToastInfo, 3*time.Second)
-		}),
-		widget.NewButton("Gestionar Clientes", func() { 
-			toastMgr.Show("Módulo Clientes - Próximamente", toast.ToastInfo, 3*time.Second)
-		}),
-		widget.NewButton("Gestionar Servicios", func() { 
-			toastMgr.Show("Módulo Servicios - Próximamente", toast.ToastInfo, 3*time.Second)
-		}),
-		widget.NewButton("Ver Ventas", func() { 
-			toastMgr.Show("Módulo Ventas - Próximamente", toast.ToastInfo, 3*time.Second)
-		}),
+	// ---- Panel izquierdo ----
+	appName := widget.NewLabelWithStyle("barber shop", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	// Lista de módulos
+	type module struct {
+		name string
+	}
+	modules := []module{
+		{"Barberos"},
+		{"Clientes"},
+		{"Servicios"},
+		{"Ventas"},
+		{"Ajustes"},
+	}
+
+	// Título del módulo en el panel superior (se actualiza al seleccionar)
+	moduleTitle := widget.NewLabelWithStyle("Barberos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+
+	// Contenido del módulo (vacío por ahora)
+	moduleContent := container.NewStack()
+
+	// Botones de módulo
+	var moduleButtons []*widget.Button
+	for _, m := range modules {
+		m := m
+		btn := widget.NewButton(m.name, func() {
+			moduleTitle.SetText(m.name)
+			// Contenido vacío por ahora
+			moduleContent.RemoveAll()
+			moduleContent.Add(widget.NewLabel(""))
+		})
+		btn.Importance = widget.LowImportance
+		moduleButtons = append(moduleButtons, btn)
+	}
+
+	modulesList := container.NewVBox()
+	for _, btn := range moduleButtons {
+		modulesList.Add(btn)
+	}
+
+	// Utilidades abajo del panel izquierdo
+	themeBtn := makeThemeButton(tm)
+	bottomUtilities := container.NewHBox(connIndicator, themeBtn)
+
+	leftPanel := container.NewBorder(
+		appName,         // top
+		bottomUtilities, // bottom
+		nil, nil,
+		modulesList, // center (módulos + espacio vacío abajo)
 	)
 
+	// ---- Panel superior ----
+	searchEntry := widget.NewEntry()
+	searchEntry.SetPlaceHolder("Buscar...")
+
+	// Sección de usuario: icono + nombre + dropdown
+	userIconRes := fyne.NewStaticResource("user.svg", colorizeSVG(userSVG, "#E0E0E0"))
+	userIcon := canvas.NewImageFromResource(userIconRes)
+	userIcon.SetMinSize(fyne.NewSize(24, 24))
+	userIcon.FillMode = canvas.ImageFillContain
+
+	userLabel := widget.NewLabel(username)
+
+	var userMenuBtn *widget.Button
+	userMenuBtn = widget.NewButton("▼", func() {
+		menu := fyne.NewMenu("",
+			fyne.NewMenuItem("Cerrar sesión", onLogout),
+		)
+		popup := widget.NewPopUpMenu(menu, w.Canvas())
+		popup.ShowAtPosition(fyne.NewPos(w.Canvas().Size().Width-180, 40))
+	})
+	userMenuBtn.Importance = widget.LowImportance
+
+	userSection := container.NewHBox(userIcon, userLabel, userMenuBtn)
+
+	topPanel := container.NewBorder(
+		nil, nil,
+		moduleTitle,  // left
+		userSection,  // right
+		searchEntry,  // center
+	)
+
+	// ---- Layout principal ----
+	rightSide := container.NewBorder(topPanel, nil, nil, nil, moduleContent)
 	mainContent := container.NewStack(
-		container.NewPadded(content),
+		container.NewBorder(nil, nil, leftPanel, nil, rightSide),
 		toastMgr.Overlay(),
 	)
 
-	return container.NewBorder(header, nil, nil, nil, mainContent)
+	return mainContent
+}
+
+// colorizeSVG reemplaza el stroke #000000 por el color dado.
+func colorizeSVG(svg []byte, hexColor string) []byte {
+	return []byte(strings.ReplaceAll(string(svg), `stroke="#000000"`, `stroke="`+hexColor+`"`))
 }

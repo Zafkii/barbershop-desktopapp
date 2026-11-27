@@ -36,6 +36,8 @@ var (
 	sunSVG []byte
 	//go:embed assets/lucid-icons/paintbrush-vertical.svg
 	customSVG []byte
+	//go:embed assets/lucid-icons/user.svg
+	userSVG []byte
 )
 
 func main() {
@@ -58,7 +60,7 @@ func main() {
 	// Mostrar la UI principal con el usuario dado
 	showMainUI := func(username string) {
 		fyne.Do(func() {
-			mainUI := ui.MakeMainUI(w, username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, func() {
+			mainUI := ui.MakeMainUI(w, username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, func() {
 				// Logout: limpiar token en memoria y en disco
 				apiClient.Logout()
 				prefs.SetString(prefToken, "")
