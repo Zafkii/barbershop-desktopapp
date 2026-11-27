@@ -104,7 +104,8 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 // - Panel izquierdo: nombre del app + módulos + utilidades abajo
 // - Panel superior: título del módulo + búsqueda + usuario con dropdown
 // - Contenido: área del módulo seleccionado (vacío por ahora)
-func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG []byte, onLogout func()) fyne.CanvasObject {
+// bgSVG es el SVG del background con placeholders __WAVE_LINE_1__ y __WAVE_LINE_2__.
+func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *appTheme.PaletteManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG, bgSVG []byte, onLogout func()) fyne.CanvasObject {
 
 	// ---- Indicador de conectividad ----
 	connIndicator := NewConnectivityIndicator(wifiSVG, wifiOffSVG)
@@ -134,7 +135,19 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 	// Título del módulo en el panel superior (se actualiza al seleccionar)
 	moduleTitle := widget.NewLabelWithStyle("Barberos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
-	// Contenido del módulo (vacío por ahora)
+	// Background SVG colorizado con la paleta actual (hex)
+	bgColored := colorizeBackground(bgSVG, pm.Wave1(), pm.Wave2())
+	bgImg := canvas.NewImageFromResource(fyne.NewStaticResource("bg.svg", bgColored))
+	bgImg.FillMode = canvas.ImageFillCover
+
+	// Reconstruye el background con los colores actuales de la paleta
+	refreshBg := func() {
+		colored := colorizeBackground(bgSVG, pm.Wave1(), pm.Wave2())
+		bgImg.Resource = fyne.NewStaticResource("bg.svg", colored)
+		bgImg.Refresh()
+	}
+
+	// Contenido del módulo (vacío por ahora; Ajustes muestra el selector de paleta)
 	moduleContent := container.NewStack()
 
 	// Botones de módulo
@@ -143,9 +156,12 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 		m := m
 		btn := widget.NewButton(m.name, func() {
 			moduleTitle.SetText(m.name)
-			// Contenido vacío por ahora
 			moduleContent.RemoveAll()
-			moduleContent.Add(widget.NewLabel(""))
+			if m.name == "Ajustes" {
+				moduleContent.Add(makeSettingsContent(pm, refreshBg, w.Canvas()))
+			} else {
+				moduleContent.Add(widget.NewLabel(""))
+			}
 		})
 		btn.Importance = widget.LowImportance
 		moduleButtons = append(moduleButtons, btn)
@@ -200,12 +216,79 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, toast
 
 	// ---- Layout principal ----
 	rightSide := container.NewBorder(topPanel, nil, nil, nil, moduleContent)
+	appLayout := container.NewBorder(nil, nil, leftPanel, nil, rightSide)
+
 	mainContent := container.NewStack(
-		container.NewBorder(nil, nil, leftPanel, nil, rightSide),
+		bgImg,
+		appLayout,
 		toastMgr.Overlay(),
 	)
 
 	return mainContent
+}
+
+// colorizeBackground reemplaza los placeholders del SVG de background con los colores dados.
+func colorizeBackground(svg []byte, wave1, wave2 string) []byte {
+	s := string(svg)
+	s = strings.ReplaceAll(s, "__WAVE_LINE_1__", wave1)
+	s = strings.ReplaceAll(s, "__WAVE_LINE_2__", wave2)
+	return []byte(s)
+}
+
+// makeSettingsContent construye el contenido del módulo Ajustes:
+// solo filas con etiqueta + cuadrado; el picker grande aparece como popup centrado al tocar.
+func makeSettingsContent(pm *appTheme.PaletteManager, refreshBg func(), canvas fyne.Canvas) fyne.CanvasObject {
+	title := widget.NewLabelWithStyle("Tema / Paleta de colores", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+
+	// Abre el picker grande centrado en el contenedor para editar un color.
+	// onChange se dispara en cada selección y actualiza swatch + paleta + background.
+	openPicker := func(currentHex string, onChange func(string)) {
+		picker := NewColorPicker(currentHex, onChange)
+		popup := widget.NewPopUp(container.NewPadded(picker), canvas)
+		canvasSize := canvas.Size()
+		popupSize := popup.MinSize()
+		x := (canvasSize.Width - popupSize.Width) / 2
+		y := (canvasSize.Height - popupSize.Height) / 2
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		popup.ShowAtPosition(fyne.NewPos(float32(x), float32(y)))
+	}
+
+	// --- Wave line 1 ---
+	swatch1 := NewSwatch(pm.Wave1(), nil)
+	swatch1.onTap = func() {
+		openPicker(pm.Wave1(), func(hex string) {
+			pm.SetWave1(hex)
+			swatch1.SetColor(hex)
+			refreshBg()
+		})
+	}
+	wave1Row := container.NewBorder(nil, nil, widget.NewLabel("Línea de onda 1"), swatch1, nil)
+
+	// --- Wave line 2 ---
+	swatch2 := NewSwatch(pm.Wave2(), nil)
+	swatch2.onTap = func() {
+		openPicker(pm.Wave2(), func(hex string) {
+			pm.SetWave2(hex)
+			swatch2.SetColor(hex)
+			refreshBg()
+		})
+	}
+	wave2Row := container.NewBorder(nil, nil, widget.NewLabel("Línea de onda 2"), swatch2, nil)
+
+	content := container.NewVBox(
+		title,
+		widget.NewSeparator(),
+		wave1Row,
+		widget.NewLabel(""),
+		wave2Row,
+	)
+
+	return container.NewPadded(content)
 }
 
 // colorizeSVG reemplaza el stroke #000000 por el color dado.

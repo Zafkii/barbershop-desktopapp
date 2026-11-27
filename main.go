@@ -38,6 +38,8 @@ var (
 	customSVG []byte
 	//go:embed assets/lucid-icons/user.svg
 	userSVG []byte
+	//go:embed assets/bg-ui/oooscillate.svg
+	bgSVG []byte
 )
 
 func main() {
@@ -48,6 +50,7 @@ func main() {
 
 	// Inicializar managers
 	themeManager := theme.NewThemeManager(a, w, moonSVG, sunSVG, customSVG)
+	paletteManager := theme.NewPaletteManager(a.Preferences())
 	toastManager := toast.NewToastManager(w)
 	apiClient := api.NewClient(serverURL)
 	connChecker := connectivity.NewChecker(serverURL, 3*time.Second)
@@ -60,7 +63,7 @@ func main() {
 	// Mostrar la UI principal con el usuario dado
 	showMainUI := func(username string) {
 		fyne.Do(func() {
-			mainUI := ui.MakeMainUI(w, username, themeManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, func() {
+			mainUI := ui.MakeMainUI(w, username, themeManager, paletteManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, bgSVG, func() {
 				// Logout: limpiar token en memoria y en disco
 				apiClient.Logout()
 				prefs.SetString(prefToken, "")
