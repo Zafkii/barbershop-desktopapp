@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -16,6 +17,72 @@ import (
 )
 
 const appTitle = "Barber Shop"
+
+// fgSeparator es una línea de 1px que usa el color de primer plano del tema
+// (blanco en oscuro, negro en claro) y se refresca al alternar el tema.
+type fgSeparator struct {
+	widget.BaseWidget
+	rect *canvas.Rectangle
+}
+
+func newFgSeparator() *fgSeparator {
+	s := &fgSeparator{rect: canvas.NewRectangle(theme.ForegroundColor())}
+	s.ExtendBaseWidget(s)
+	return s
+}
+
+func (s *fgSeparator) CreateRenderer() fyne.WidgetRenderer {
+	s.rect.FillColor = theme.ForegroundColor()
+	return &fgSeparatorRenderer{s: s}
+}
+
+type fgSeparatorRenderer struct{ s *fgSeparator }
+
+func (r *fgSeparatorRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.s.rect} }
+func (r *fgSeparatorRenderer) Destroy()                     {}
+func (r *fgSeparatorRenderer) Layout(size fyne.Size) {
+	r.s.rect.Resize(fyne.NewSize(size.Width, 1))
+}
+func (r *fgSeparatorRenderer) MinSize() fyne.Size { return fyne.NewSize(0, 1) }
+func (r *fgSeparatorRenderer) Refresh() {
+	r.s.rect.FillColor = theme.ForegroundColor()
+	r.s.rect.Refresh()
+}
+
+// translucentRect es un rectángulo que llena su contenedor con el color de fondo
+// del tema al 70% de opacidad, dejando ver el SVG de fondo por detrás.
+type translucentRect struct {
+	widget.BaseWidget
+	rect *canvas.Rectangle
+}
+
+func translucentBgColor() color.Color {
+	bg := theme.BackgroundColor()
+	r, g, b, _ := bg.RGBA()
+	return color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), 0xB2} // 0xB2 ≈ 70%
+}
+
+func newTranslucentRect() *translucentRect {
+	s := &translucentRect{rect: canvas.NewRectangle(translucentBgColor())}
+	s.ExtendBaseWidget(s)
+	return s
+}
+
+func (s *translucentRect) CreateRenderer() fyne.WidgetRenderer {
+	s.rect.FillColor = translucentBgColor()
+	return &translucentRectRenderer{s: s}
+}
+
+type translucentRectRenderer struct{ s *translucentRect }
+
+func (r *translucentRectRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.s.rect} }
+func (r *translucentRectRenderer) Destroy()                     {}
+func (r *translucentRectRenderer) Layout(size fyne.Size)        { r.s.rect.Resize(size) }
+func (r *translucentRectRenderer) MinSize() fyne.Size           { return fyne.Size{} }
+func (r *translucentRectRenderer) Refresh() {
+	r.s.rect.FillColor = translucentBgColor()
+	r.s.rect.Refresh()
+}
 
 // makeThemeButton crea un botón de tema con icono dinámico (moon/sun/custom).
 // Al tocarlo alterna solo entre dark y light; nunca entra a custom.
@@ -102,7 +169,7 @@ func MakeLoginUI(w fyne.Window, tm *appTheme.ThemeManager, toastMgr *toast.Toast
 
 // MakeMainUI crea la pantalla principal con 3 paneles (sin background; el bg se pinta a nivel de ventana).
 // refreshBg reconstruye el background de la ventana con la paleta actual.
-func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *appTheme.PaletteManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG []byte, refreshBg func(), onLogout func()) fyne.CanvasObject {
+func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *appTheme.PaletteManager, toastMgr *toast.ToastManager, connChecker *connectivity.Checker, wifiSVG, wifiOffSVG, userSVG, titlePNG, icodaPNG []byte, refreshBg func(), onLogout func()) fyne.CanvasObject {
 
 	// ---- Indicador de conectividad ----
 	connIndicator := NewConnectivityIndicator(wifiSVG, wifiOffSVG)
@@ -115,7 +182,24 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *a
 	connIndicator.UpdateStatus(connChecker.Status())
 
 	// ---- Panel izquierdo ----
-	appName := widget.NewLabelWithStyle("barber shop", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	// Header: title.png al frente, icoda.png detrás (la transparencia del wordmark lo deja ver).
+	titleImg := canvas.NewImageFromResource(fyne.NewStaticResource("title.png", titlePNG))
+	titleImg.FillMode = canvas.ImageFillContain
+	titleImg.SetMinSize(fyne.NewSize(132, 32))
+	icodaImg := canvas.NewImageFromResource(fyne.NewStaticResource("icoda.png", icodaPNG))
+	icodaImg.FillMode = canvas.ImageFillContain
+	icodaImg.SetMinSize(fyne.NewSize(64, 64))
+
+	// Stack estira ambos al tamaño del header; ImageFillContain conserva proporción y centra.
+	headerStack := container.NewStack(icodaImg, titleImg)
+	// Separador theme-aware: blanco en tema oscuro, negro en claro (ForegroundColor).
+	// Se actualiza solo al alternar el tema.
+	sepLine := newFgSeparator()
+	// Espacio decente alrededor del título + línea discreta que lo separa de los módulos.
+	appHeader := container.NewVBox(
+		container.NewPadded(headerStack),
+		sepLine,
+	)
 
 	// Lista de módulos
 	type module struct {
@@ -162,7 +246,7 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *a
 	bottomUtilities := container.NewHBox(connIndicator, themeBtn)
 
 	leftPanel := container.NewBorder(
-		appName,         // top
+		appHeader,       // top (title.png + icoda.png)
 		bottomUtilities, // bottom
 		nil, nil,
 		modulesList, // center (módulos + espacio vacío abajo)
@@ -200,6 +284,10 @@ func MakeMainUI(w fyne.Window, username string, tm *appTheme.ThemeManager, pm *a
 	)
 
 	// ---- Layout principal ----
+	// Fondos translúcidos (color del tema al 70%) detrás de los paneles.
+	leftPanel = container.NewStack(newTranslucentRect(), leftPanel)
+	topPanel = container.NewStack(newTranslucentRect(), topPanel)
+
 	rightSide := container.NewBorder(topPanel, nil, nil, nil, moduleContent)
 	appLayout := container.NewBorder(nil, nil, leftPanel, nil, rightSide)
 

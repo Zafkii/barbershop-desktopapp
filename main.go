@@ -29,6 +29,8 @@ const (
 var (
 	//go:embed assets/icoda.png
 	iconBytes []byte
+	//go:embed assets/title.png
+	titlePNG []byte
 	//go:embed assets/lucid-icons/wifi.svg
 	wifiSVG []byte
 	//go:embed assets/lucid-icons/wifi-off.svg
@@ -111,7 +113,7 @@ func main() {
 	// Mostrar la UI principal con el usuario dado
 	showMainUI := func(username string) {
 		fyne.Do(func() {
-			mainUI := ui.MakeMainUI(w, username, themeManager, paletteManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, refreshBg, func() {
+			mainUI := ui.MakeMainUI(w, username, themeManager, paletteManager, toastManager, connChecker, wifiSVG, wifiOffSVG, userSVG, titlePNG, iconBytes, refreshBg, func() {
 				// Logout: limpiar token en memoria y en disco
 				apiClient.Logout()
 				prefs.SetString(prefToken, "")
